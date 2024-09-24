@@ -1,11 +1,11 @@
 ---
 title: "The Best and Worst Places to Remote Work"
-author: "scurry"
+author: "Sarah Curry"
 date: "`r Sys.Date()`"
 output:
   html_document:
     toc: TRUE
-    theme: sandstone
+    theme: united
     number_sections: FALSE
     toc_float: TRUE
     toc_depth: 2
@@ -16,7 +16,8 @@ bibliography: references.bib
 ```{r setup, include=FALSE}
 
 knitr::opts_chunk$set(warning = FALSE, message = FALSE)
-options(tigris_use_cache = TRUE)
+options(tigris_use_cache = TRUE,
+        width = 50)
 setwd("C:/LocalDocuments/GitHub/MUSA6310_HW02")
 
 library(dplyr)
@@ -109,6 +110,8 @@ us <- get_acs(geography = "state",
   plot(msa_mhi_22)
 ```
 
+## Philadelphia, PA
+
 If you work remotely out of Philadelphia, where in the Northeastern region can you
 live comfortably? 
 
@@ -149,7 +152,7 @@ amount of mobility. Across the country, a household earning that annual
 income could likely rent in most Counties that orbit an MSA wiht a lower Cost of 
 Living without risk of being cost-burdened. 
 
-A cost-burdened household pays more than 30% of its income on rent and utilities. 
+> A cost-burdened household pays more than 30% of its income on rent and utilities. 
 
 The Cost of Living per County was calculated as the annual salary needed to spend 
 only 30% on gross rent. In the maps below, Comfortability refers to the ratio of 
@@ -252,14 +255,14 @@ ggplot() +
 ```
 
 In the Northeastern region, the only area where a household would not be comfortable 
-is in the DC/Northern Virginia area. Throughout most of Pennsylvania, a househould
+is in the DC/Northern Virginia area. Throughout most of Pennsylvania, a household
 would be more than comfortable given the cost of living and price of rents per County.
 
 ```{r col_map_pa, echo=FALSE, message= FALSE, warning=FALSE}
 ggplot() +
   geom_sf(data = water, fill = "steelblue") +
   geom_sf(data = ec_lrs_22, aes(fill = f_phl_mhi), color = "transparent") +
-  scale_fill_brewer(palette = "RdYlGn", direction = -1) +
+  scale_fill_brewer(palette = "RdYlGn", na.value = "gray", direction = -1) +
   xlim(-81, -74.5) +
   ylim(39.5, 42.5) +
   geom_sf(data = us, fill = "transparent", color = "steelblue", size = 8) +
@@ -272,3 +275,6 @@ ggplot() +
 
 ```
 
+Inspiration for this article comes from [@mobilitymatters] and [@bestworst]
+
+### References
