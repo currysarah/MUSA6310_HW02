@@ -1,0 +1,27 @@
+"0","#take cheaper of rent vs homeowning
+ec_lrs_22 <- ec_mgr_msmoc_22 %>%
+  mutate(cheap = pmin(mgrE, msmocE)) %>%
+  mutate(livsal = (cheap/.30)*12,
+         pc_phl_mhi = (85555/livrsal)) %>%
+  mutate(f_phl_mhi = case_when(pc_phl_mhi >= 2.0 ~ ""Twice As Comfortable"",
+                               pc_phl_mhi < 2.0 & pc_phl_mhi >= 1.5 ~ ""Nearly Twice as Comfortable"",
+                               pc_phl_mhi < 1.5 & pc_phl_mhi > 1.0 ~ ""More than Comfortable"",
+                               pc_phl_mhi == 1.0 ~ ""Equally As Comfortable"",
+                               pc_phl_mhi < 1.0 & pc_phl_mhi >= 0.8 ~ ""Uncomfortable"",
+                               pc_phl_mhi < 0.8 & pc_phl_mhi >= 0.5 ~ ""Moderately Uncomfortable"",
+                               pc_phl_mhi < 0.5 & pc_phl_mhi >= 0.3 ~ ""Very Uncomfortable"",
+                               pc_phl_mhi < 0.3 ~ ""Extremely Uncomfortable""
+  ))
+"
+"1","[1m[33mError[39m in `stopifnot()`:[22m
+[38;5;255m[36mℹ[38;5;255m In argument: `pc_phl_mhi = (85555/livrsal)`.[39m
+[1mCaused by error:[22m
+[33m![39m object 'livrsal' not found
+Backtrace:
+[90m  1. [39m... %>% ...
+[90m  8. [39m[1m[94mdplyr:::mutate.data.frame([39m[22m., livsal = (cheap/0.3) * 12, pc_phl_mhi = (85555/livrsal)[1m[94m)[39m[22m
+[90m  9. [39mdplyr:::mutate_cols(.data, dplyr_quosures(...), by)
+[90m 11. [39mdplyr:::mutate_col(dots[[i]], data, mask, new_columns)
+[90m 12. [39mmask$eval_all_mutate(quo)
+[90m 13. [39m[1mdplyr[22m (local) eval()
+"

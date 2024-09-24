@@ -1,0 +1,15 @@
+"0","msa_mhi_22_cnt <- msa_mhi_22 %>%
+  arrange(desc(popE)) %>%
+  select(NAME, scales::dollar(mhiE)) %>%
+  rename(""Metropolitan Statistical Area"" = ""NAME"", ""Median Household Income"" = ""mhiE"") %>%
+  st_drop_geometry() %>%
+  head(8)
+"
+"1","[1m[33mError[39m in `select()`:[22m
+[38;5;255m[36mℹ[38;5;255m In argument: `scales::dollar(mhiE)`.[39m
+[1mCaused by error:[22m
+[33m![39m object 'mhiE' not found
+Backtrace:
+[90m  1. [39m... %>% head(8)
+[90m 20. [39m[1mscales[22m::dollar(mhiE)
+"
