@@ -17,7 +17,7 @@ bibliography: references.bib
 
 knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 options(tigris_use_cache = TRUE)
-setwd("C:/LocalDocuments/MUSA6310c/Assignment02/Remote_Work")
+setwd("C:/LocalDocuments/GitHub/MUSA6310_HW02")
 
 library(dplyr)
 library(ggplot2)
