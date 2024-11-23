@@ -79,7 +79,7 @@ necessarily rank the same way in terms of how much they're paying out.
 
 msa_mhi_22_cnt %>%
   kbl(col.names = c(" ", "Metropolitan Statistical Area", "Median Household Income")) %>%
-  kable_material(c("triped", "hover"))
+  kable_material(c("hover"))
 
 ```
 
@@ -134,7 +134,7 @@ ggplot() +
   scale_x_continuous(labels = scales::label_dollar()) +
   geom_vline(data = phl_mhi_22, aes(xintercept = mhiE), color = "goldenrod", linetype = "dashed",
              size = 1) +
-  geom_text(data = phl_mhi_22, aes(x = mhiE + 3000, y = 100, label = "Philadlephia MSA"),
+  geom_text(data = phl_mhi_22, aes(x = mhiE + 3000, y = 100, label = "Philadelphia MSA"),
             color = "goldenrod", angle = 90) +
   labs(title = "2022 Median Household Income",
        subtitle = "US Metropolitan Statistical Areas",
@@ -146,7 +146,7 @@ ggplot() +
 
 ```
 
-The Philadelphia MSA's MHI is in the 93rd percentile of all MSAs. THeoretically,
+The Philadelphia MSA's MHI is in the 93rd percentile of all MSAs. Theoretically,
 securing a remote work job that was based in Philadelphia allows for a large 
 amount of mobility. Across the country, a household earning that annual 
 income could likely rent in most Counties that orbit an MSA wiht a lower Cost of 
