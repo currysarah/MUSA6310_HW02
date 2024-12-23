@@ -10,8 +10,19 @@ output:
     toc_float: TRUE
     toc_depth: 2
     code_folding: hide
-bibliography: references.bib
+#bibliography: references.bib
 ---
+
+<style type="text/css">
+  body{
+  font-size: 12pt;
+  font-family: "Century Old Style", roman;
+}
+
+  h1, h2, h3{
+  font-family: "Congenial Black", italic;
+}
+</style>
 
 ```{r setup, include=FALSE}
 
@@ -24,232 +35,339 @@ library(dplyr)
 library(ggplot2)
 library(kableExtra)
 library(knitr)
+library(mapview)
 library(scales)
 library(sf)
 library(tidycensus)
 library(tigris)
 
-us <- states() %>% filter(as.numeric(REGION) <= 3)
+us <- states(cb = TRUE)%>%
+  st_transform(crs = 5070)
 water <- st_as_sfc(st_bbox(us))
-pacounty <- counties(state = 42) %>% select(NAME)
+us <- us %>% 
+  filter(as.numeric(GEOID) <= 56) 
+pacounty <- counties(state = 42) %>% 
+  select(NAME) %>%
+  st_transform(crs = 5070)
 
 acs_variable_list.2022 <- load_variables(2022, #year
                                          "acs5", #five year ACS estimates
                                          cache = TRUE)
 
-#pawage <- read.csv("LivingWage_PA2024.csv") %>% select(COUNTY, X2A2W0C) %>% rename("NAME" = "COUNTY")
-#pawage <- merge(pacounty, pawage, by = "NAME", all.x = TRUE)
+```
+# Where's the Remote (Work)?
 
-#pals_24 <- read.csv("LivingSalary_PA2024.csv")
+In this era of increasing interest in remote work, folks who are entering the job
+market or looking for a new position may aim to get hired at companies that are 
+based in places where they can make a high income. In order to maximize their 
+paycheck, they're looking to live in places where
+they can rent or own housing where there is a low cost of living - 
+so where should they look for a job and where should they live? Here are the Median
+Household Incomes in the 3 largest Metropolitan Statistical Areas per time zone 
+in the United States. 
 
-#pals_2a1w0c_24 <- pals_24 %>% select(COUNTY, X2A1W0C) %>% rename("NAME" = "COUNTY") #individual income
-#pals_2a2w0c_24 <- pals_24 %>% select(COUNTY, X2A2W0C) %>% rename("NAME" = "COUNTY") #household income
-#pals_2a2w1c_24 <- pals_24 %>% select(COUNTY, X2A2W1C) %>% rename("NAME" = "COUNTY") #household income
+```{r fig_one_data, message=FALSE, warning=FALSE}
 
-#pals_2a1w0c_24 <- merge(pacounty, pasal, by = "NAME", all.x = TRUE)
+#https://geodata.bts.gov/datasets/usdot::time-zones/explore
+timezone_us <- read_sf(dsn = "data/NTAD_Time_Zones_873827312334388986.geojson") %>%
+  filter(zone == "Eastern" | zone == "Central" | zone == "Mountain" | zone == "Pacific") %>%
+  st_transform(crs = 5070) %>%
+  select(zone)
 
 msa_mhi_22 <- get_acs(geography = "metropolitan statistical area/micropolitan statistical area",
                      year = 2022, 
-                     variables = c(pop = "B01003_001", mhi = "B19013_001"),#median household income
+                     variables = c(pop = "B01003_001", mhi = "B19013_001", wfh = "B99087_005"),#median household income
                      geometry = TRUE,
                      output = "wide"
 ) 
 
-msa_mhi_22_cnt <- msa_mhi_22 %>%
+#match msa to time zone
+msa_ctr <- msa_mhi_22 %>%
+  st_transform(crs = 5070) %>%
+  st_centroid()
+
+msa_tz <- st_intersection(msa_ctr, timezone_us) %>%
+  select(GEOID, zone) %>%
+  st_drop_geometry()
+
+#check on wfh pc
+msa_mhi_22 <- msa_mhi_22 %>%
+  mutate(pcentwfh = wfhE/popE)
+
+#attach tz to each msa
+msa_mhi_22 <- left_join(msa_mhi_22, msa_tz, by = "GEOID")
+
+#average msa mhi per time zone
+msa_mhi_22_avg <- msa_mhi_22 %>%
+  group_by(zone) %>%
+  summarize(mhiavg = mean(mhiE))
+
+#grab top 3 per tz
+msa_mhi_22_eastern <- msa_mhi_22 %>%
+  filter(zone == "Eastern") %>%
   arrange(desc(popE)) %>%
-  select(NAME, mhiE) %>%
-  rename("Metropolitan Statistical Area" = "NAME") %>%
-  mutate("Median Household Income" = scales::dollar(mhiE)) %>%
-  select(-mhiE) %>%
-  st_drop_geometry() %>%
-  head(8)
+  select(NAME, mhiE, zone) %>%
+  rename("MSA" = "NAME", "MHI" = "mhiE") %>%
+  head(3) %>%
+  st_centroid()
 
-msa_mhi_22_cnt <- msa_mhi_22_cnt %>%
-  mutate(ID = c(1:8), .before = "Metropolitan Statistical Area")
+msa_mhi_22_central <- msa_mhi_22 %>%
+  filter(zone == "Central") %>%
+  arrange(desc(popE)) %>%
+  select(NAME, mhiE, zone) %>%
+  rename("MSA" = "NAME", "MHI" = "mhiE") %>%
+  head(3) %>%
+  st_centroid()
 
-```
-Remote workers are often looking for jobs based in places where they can make a high 
-income. In order to maximize their paycheck, they're looking for places where
-they can rent or own housing where there is a low cost of living - 
-so where should they look for a job and where should they live? The top most 
-populated Metropolitan Statistical Areas in the United States don't 
-necessarily rank the same way in terms of how much they're paying out. 
+msa_mhi_22_mountain <- msa_mhi_22 %>%
+  filter(zone == "Mountain") %>%
+  arrange(desc(popE)) %>%
+  select(NAME, mhiE, zone) %>%
+  rename("MSA" = "NAME", "MHI" = "mhiE") %>%
+  head(3) %>%
+  st_centroid()
 
-```{r size_mhi_msa, echo=FALSE}
+msa_mhi_22_pacific <- msa_mhi_22 %>%
+  filter(zone == "Pacific") %>%
+  arrange(desc(popE)) %>%
+  select(NAME, mhiE, zone) %>%
+  rename("MSA" = "NAME", "MHI" = "mhiE") %>%
+  head(3) %>%
+  st_centroid()
 
-msa_mhi_22_cnt %>%
-  kbl(col.names = c(" ", "Metropolitan Statistical Area", "Median Household Income")) %>%
-  kable_material(c("hover"))
+msa_mhi_22 <- rbind(msa_mhi_22_eastern, msa_mhi_22_central)
+msa_mhi_22 <- rbind(msa_mhi_22, msa_mhi_22_mountain)
+msa_mhi_22 <- rbind(msa_mhi_22, msa_mhi_22_pacific)
 
-```
-
-```{r ugh, eval=FALSE, include=FALSE}
-us <- get_acs(geography = "state",
-                     year = 2022, 
-                     variables = c(pop = "B01003_001"),
-                     geometry = TRUE,
-                     output = "wide"
-) %>%
-  select(GEOID) %>%
-#  filter(as.numeric(GEOID) <= 50) %>%
-  mutate(region = case_when((GEOID = "09" | GEOID = "23" | GEOID = "25" | GEOID = "33" | GEOID = "44" | GEOID = "50" | GEOID = "34" | GEOID = "36" | GEOID = "42") ~ "Northeast",
-                            (GEOID = "18" | GEOID = "17" | GEOID = "26" | GEOID = "39" | 
-                              GEOID = "55" | GEOID = "19" | GEOID = "20" | GEOID = "27" |
-                              GEOID = "29" | GEOID = "31" | GEOID = "38" | GEOID = "46") ~ 
-                              Midwest,
-                            (GEOID = "10" | GEOID = "11" | GEOID = "12" | GEOID = "13" |
-                              GEOID = "24" | GEOID = "37" | GEOID = "45" | GEOID = "51" |
-                              GEOID = "54" | GEOID = "01" | GEOID = "21" | GEOID = "28" |
-                              GEOID = "47" | GEOID = "05" | GEOID = "22" | GEOID = "40" |
-                              GEOID = "48") ~ South,
-                            (GEOID = "04" | GEOID = "08" | GEOID = "16" | GEOID = "35" |
-                              GEOID = "30" | GEOID = "49" | GEOID = "32" | GEOID = "56" |
-                              GEOID = "02" | GEOID = "06" | GEOID = "15" | GEOID = "41" |
-                              GEOID = "53") ~ West))
-  
-  plot(msa_mhi_22)
-```
-
-## Philadelphia, PA
-
-If you work remotely out of Philadelphia, where in the Northeastern region can you
-live comfortably? 
-
-In 2022, the Median Household Income in the Metropolitan Statistical Area of 
-Philadelphia, PA was $85,555. Compared to the MHI of other MSAs in the United 
-States,
-
-```{r msa_mhi_data, message=FALSE, warning=FALSE, include=FALSE}
-
-phl_mhi_22 <- msa_mhi_22 %>%
-  filter(GEOID == 37980)
+#variables for each msa and mhi
+chicagomhi <- 85087
+dallasmhi <- 83398
+houstonmhi <- 78061
+newyorkmhi <- 93610
+dcmhi <- 119803
+philadelphiamhi <- 85555
+phoenixmhi <- 79935
+denvermhi <- 96920
+saltlakecitymhi <- 90277
+lamhi <- 89105
+sanfranciscomhi <- 129315
+riversidemhi <- 81041
 
 ```
 
-
-```{r msa_mhi_chart, echo=FALSE, message=FALSE, warning=FALSE}
+```{r fig_one_map, message=FALSE, warning=FALSE}
 
 ggplot() +
-  geom_histogram(data = msa_mhi_22, aes(x = mhiE), fill = "darkolivegreen4", color = "darkolivegreen") +
-  scale_x_continuous(labels = scales::label_dollar()) +
-  geom_vline(data = phl_mhi_22, aes(xintercept = mhiE), color = "goldenrod", linetype = "dashed",
-             size = 1) +
-  geom_text(data = phl_mhi_22, aes(x = mhiE + 3000, y = 100, label = "Philadelphia MSA"),
-            color = "goldenrod", angle = 90) +
-  labs(title = "2022 Median Household Income",
-       subtitle = "US Metropolitan Statistical Areas",
-       x = "Median Household Income",
-       y = " ",
-#       fill = "Percentage of Philadelphia MHI",
-       caption = "Source: 2022 ACS, U.S. Census Bureau") +
-  theme_minimal()
+  geom_sf(data = timezone_us %>% filter(zone == "Eastern"), color = "transparent", fill = "#8FC1B5", alpha = 0.5) +
+  geom_sf(data = timezone_us %>% filter(zone == "Central"), color = "transparent", fill = "#589A8D", alpha = 0.5) +
+  geom_sf(data = timezone_us %>% filter(zone == "Mountain"), color = "transparent", fill = "#007566", alpha = 0.5) +
+  geom_sf(data = timezone_us %>% filter(zone == "Pacific"), color = "transparent", fill = "#146551", alpha = 0.5) +
+  geom_sf(data = us, color = "white", fill = "transparent", size = 2) +
+  geom_sf(data = msa_mhi_22, color = "#FF7300", alpha  = 0.5, aes(size = MHI)) +
+  annotate("text", x = 1880000, y = 2400000, label = "New York City Metro Area\n$93,610", color = "#332E2B", size = 2.5, hjust = 1) +
+  annotate("text", x = 1880000, y = 2000000, label = "Philadelphia Metro Area\n$85,555", color = "#332E2B", size = 2.5, hjust = 0) +
+  annotate("text", x = 1400000, y = 1850000, label = "DC Metro Area\n$119,803", color = "#332E2B", size = 2.5, hjust = 1) +
+  annotate("text", x = 550000, y = 2050000, label = "Chicago Metro Area\n$85,087", color = "#332E2B", size = 2.5, hjust = 1) +
+  annotate("text", x = 30000, y = 1022000, label = "Dallas-Ft. Worth Metro Area\n$83,398", color = "#332E2B", size = 2.5, hjust = 0) +
+  annotate("text", x = 160000, y = 680000, label = "Houston Metro Area\n$78,061", color = "#332E2B", size = 2.5, hjust = 0) +
+  annotate("text", x = -800000, y = 1650000, label = "Denver Metro Area\n$96,920", color = "#332E2B", size = 2.5, hjust = 0) + 
+  annotate("text", x = -1500000, y = 2300000, label = "Salt Lake City Metro Area\n$90,277", color = "#332E2B", size = 2.5, hjust = 0) + 
+  annotate("text", x = -1530000, y = 1070000, label = "Phoenix Metro Area\n$79,935", color = "#332E2B", size = 2.5, hjust = 0) + 
+  annotate("text", x = -1880000, y = 1650000, label = "Riverside Metro Area\n$81,041", color = "#332E2B", size = 2.5, hjust = 0) + 
+  annotate("text", x = -1980000, y = 1300000, label = "Los Angeles Metro Area\n$89,105", color = "#332E2B", size = 2.5, hjust = 1) + 
+  annotate("text", x = -2380000, y = 1900000, label = "San Francisco Metro Area\n$129,315", color = "#332E2B", size = 2.5, hjust = 1) + 
+  theme(legend.position = "none",
+        panel.background = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.line = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks = element_blank()) +
+  xlim(-3500000, 2900000) +
+  ylim(350000, 3400000) 
+
 
 ```
 
-The Philadelphia MSA's MHI is in the 93rd percentile of all MSAs. Theoretically,
-securing a remote work job that was based in Philadelphia allows for a large 
-amount of mobility. Across the country, a household earning that annual 
-income could likely rent in most Counties that orbit an MSA wiht a lower Cost of 
-Living without risk of being cost-burdened. 
+Why look at the largest MSA's? As more and more workplaces consider going back to work,
+the larger MSA's are more likely to have a greater number of remote jobs available
+and are also likely to be the most urban and easy to get to in the event of a work schedule
+that requires going into the office from time to time. Let's assume that remote 
+employees would prefer to live and work in the same timezone for ease of completing 
+assignments and attending meetings.
+
+## Living Comfortably
+
+The cost of living in a given region can be measured in various ways. MIT examines 
+the summed monthly and annual budget that includes food, childcare, transportation, 
+and housing costs. Another method to measure comfortability is by calculating if the 
+monthly housing costs are less than 30% of a family's household income.
 
 > A cost-burdened household pays more than 30% of its income on rent and utilities. 
 
-The Cost of Living per County was calculated as the annual salary needed to spend 
-only 30% on gross rent. In the maps below, Comfortability refers to the ratio of 
-the Remote Work Base Location to the Cost of Living in the County.
+### Methodology
+
+For every county in each time zone, the annual living wage salary was calculated using the 
+monthly costs for a rented or owned home - whichever was most affordable (a.k.a. "cheapest").
 
 ```{r col_data, message=FALSE, warning=FALSE, include=FALSE}
 
-ec_mgr_msmoc_22 <- get_acs(geography = "county",
+county_mgr_msmoc_22 <- get_acs(geography = "county",
                      year = 2022, 
                      variables = c(mgr = "B25064_001", msmoc = "B25094_001"), #GROSS RENT - SMOC
                      geometry = TRUE,
-                     state = c("FL", "GA", "SC", "NC", "TN",
-                               "VA", "WV", "KY", "IN", "OH",
-                               "MI", "MD", "DC", "PA", "NJ",
-                               "NY", "CT", "RI", "MA", "NH",
-                               "VT", "ME", "DE"),
+                     state = c("AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE",
+                               "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", 
+                               "KY", "LA", "ME", "MD", "MA", "MI", "MS", "MO",
+                               "MN", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", 
+                               "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", 
+                               "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV",
+                               "WI", "WY"),
                      output = "wide"
 )
 
-# ec_msmoc_22 <- get_acs(geography = "county",
-#                      year = 2022, 
-#                      variables = "B25094_001",#SMOC
-#                      geometry = TRUE,
-#                      state = c("FL", "GA", "SC", "NC", "TN",
-#                                "VA", "WV", "KY", "IN", "OH",
-#                                "MI", "MD", "DC", "PA", "NJ",
-#                                "NY", "CT", "RI", "MA", "NH",
-#                                "VT", "ME", "DE")
-#)
-
 #take cheaper of rent vs homeowning
-ec_lrs_22 <- ec_mgr_msmoc_22 %>%
-  mutate(cheap = pmin(mgrE, msmocE)) %>%
-  mutate(livsal = (cheap/.30)*12,
-         pc_phl_mhi = (85555/livsal)) %>%
-  mutate(f_phl_mhi = case_when(pc_phl_mhi >= 2.0 ~ "Twice As Comfortable",
-                               pc_phl_mhi < 2.0 & pc_phl_mhi >= 1.5 ~ "Nearly Twice as Comfortable",
-                               pc_phl_mhi < 1.5 & pc_phl_mhi > 1.0 ~ "More than Comfortable",
-                               pc_phl_mhi == 1.0 ~ "Equally As Comfortable",
-                               pc_phl_mhi < 1.0 & pc_phl_mhi >= 0.8 ~ "Uncomfortable",
-                               pc_phl_mhi < 0.8 & pc_phl_mhi >= 0.5 ~ "Moderately Uncomfortable",
-                               pc_phl_mhi < 0.5 & pc_phl_mhi >= 0.3 ~ "Very Uncomfortable",
-                               pc_phl_mhi < 0.3 ~ "Extremely Uncomfortable"
-  ))
+county_ls_22 <- county_mgr_msmoc_22 %>%
+  mutate(cheapest = pmin(mgrE, msmocE)) %>%
+  mutate(buy_rent = case_when(mgrE == cheapest ~ "Rent",
+                              msmocE == cheapest ~ "Buy")) %>%
+  mutate(livsal = (cheapest/.30)*12)
 
-# ec_los_22 <- ec_msmoc_22 %>%
-#   select(-moe) %>%
-#   mutate(livosal = (msmocE/.30)*12,
-#          pc_phl_mhi = (85555/livosal)) %>%
-#   mutate(f_phl_mhi = case_when(pc_phl_mhi >= 2.0 ~ "Twice As Comfortable",
-#                                pc_phl_mhi < 2.0 & pc_phl_mhi >= 1.5 ~ "Nearly Twice as Comfortable",
-#                                pc_phl_mhi < 1.5 & pc_phl_mhi > 1.0 ~ "More than Comfortable",
-#                                pc_phl_mhi == 1.0 ~ "Equally As Comfortable",
-#                                pc_phl_mhi < 1.0 & pc_phl_mhi >= 0.8 ~ "Uncomfortable",
-#                                pc_phl_mhi < 0.8 & pc_phl_mhi >= 0.5 ~ "Moderately Uncomfortable",
-#                                pc_phl_mhi < 0.5 & pc_phl_mhi >= 0.3 ~ "Very Uncomfortable",
-#                                pc_phl_mhi < 0.3 ~ "Extremely Uncomfortable"
-#  ))
+#time zone per county
+county_ctr <- county_mgr_msmoc_22 %>%
+  st_transform(crs = 5070) %>%
+  st_centroid()
 
-ec_lrs_22$f_phl_mhi <- factor(ec_lrs_22$f_phl_mhi, levels = c("Twice As Comfortable",
-                                                              "Nearly Twice as Comfortable",
-                                                              "More than Comfortable",
-                                                              "Equally As Comfortable",
-                                                              "Uncomfortable",
-                                                              "Moderately Uncomfortable",
-                                                              "Very Uncomfortable",
-                                                              "Extremely Uncomfortable"))
+county_tz <- st_intersection(county_ctr, timezone_us) %>%
+  select(GEOID, zone) %>%
+  st_drop_geometry()
 
-# ec_los_22$f_phl_mhi <- factor(ec_lrs_22$f_phl_mhi, levels = c("Twice As Comfortable",
-#                                                               "Nearly Twice as Comfortable",
-#                                                               "More than Comfortable",
-#                                                               "Equally As Comfortable",
-#                                                               "Uncomfortable",
-#                                                               "Moderately Uncomfortable",
-#                                                               "Very Uncomfortable",
-#                                                               "Extremely Uncomfortable"))
+county_ls_22 <- left_join(county_ls_22, county_tz, by = "GEOID")
 
 ```
+
+## Eastern Region
+
+If you work remotely out of New York City, DC, or Philadelphia, where in the Eastern
+time zone can you live comfortably? 
+
+```{r eastern_col_data, message=FALSE, warning=FALSE, include=FALSE}
+
+county_ls_22_eastern <- county_ls_22 %>%
+  filter(zone == "Eastern") %>%
+  mutate(pc_phl_mhi = philadelphiamhi/livsal,
+         pc_nyc_mhi = newyorkmhi/livsal,
+         pc_dc_mhi = dcmhi/livsal) %>%
+  st_transform(crs = 5070)
+
+```
+
+```{r eastern_col_map, message=FALSE, warning=FALSE}
+
+ggplot() +
+#  geom_sf(data = timezone_us %>% filter(zone == "Eastern"), color = "transparent", fill = "#8FC1B5", alpha = 0.5) +
+  geom_sf(data = county_ls_22_eastern, aes(fill = livsal), color = "transparent") +
+  scale_fill_steps(low = "#AA4639", high = "#FFDBAA", breaks = seq(15000, 90000, 10000), labels = scales::label_dollar()) +
+  geom_sf(data = us, color = "white", fill = "transparent", size = 2) +
+  geom_sf(data = msa_mhi_22 %>% filter(zone == "Eastern"), color = "#FF7300", fill = "#FF7300", size = 2, shape = 25) +
+  annotate("text", x = 1880000, y = 2400000, label = "New York City Metro Area\n$93,610", color = "#332E2B", size = 2.5, hjust = 1) +
+  annotate("text", x = 1880000, y = 2000000, label = "Philadelphia Metro Area\n$85,555", color = "#332E2B", size = 2.5, hjust = 0) +
+  annotate("text", x = 1400000, y = 1850000, label = "DC Metro Area\n$119,803", color = "#332E2B", size = 2.5, hjust = 1) +
+  theme(
+#    legend.position = "none",
+        panel.background = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.line = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks = element_blank()
+        ) +
+  xlim(-1500000, 2900000) +
+  ylim(350000, 3400000)
+
+```
+
+
+## Central Region
+
+```{r central_col_data, message=FALSE, warning=FALSE, include=FALSE}
+
+county_ls_22_central <- county_ls_22 %>%
+  filter(zone == "Central") %>%
+  mutate(pc_chi_mhi = chicagomhi/livsal,
+         pc_dallas_mhi = dallasmhi/livsal,
+         pc_houston_mhi = houstonmhi/livsal)
+
+```
+
+## Mountain Region
+
+```{r mountain_col_data, message=FALSE, warning=FALSE, include=FALSE}
+
+county_ls_22_mountain <- county_ls_22 %>%
+  filter(zone == "Mountain") %>%
+  mutate(pc_phoenix_mhi = phoenixmhi/livsal,
+         pc_denver_mhi = denvermhi/livsal,
+         pc_slc_mhi = saltlakecitymhi/livsal)
+
+```
+
+## Pacific Region
+
+```{r pacific_col_data, message=FALSE, warning=FALSE, include=FALSE}
+
+county_ls_22_pacific <- county_ls_22 %>%
+  filter(zone == "Pacific") %>%
+  mutate(pc_la_mhi = lamhi/livsal,
+         pc_sf_mhi = sanfranciscomhi/livsal,
+         pc_riverside_mhi = riversidemhi/livsal)
+
+```
+
+```{r col_map, eval=FALSE, message=TRUE, warning=TRUE, include=FALSE}
+
+ggplot() +
+  geom_sf(data = us, color = "white", fill = "gray90") +
+  geom_sf(data = ec_lrs_22, aes(fill = livsal), color = "transparent") +
+  theme(legend.position = "none",
+        panel.background = element_blank(),
+        axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.line = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks = element_blank()) +
+  xlim(-2250000, 2074000) +
+  ylim(350000, 3400000) 
+
+```
+
 
 Twice as Comfortable refers to a County where the Cost of Living is less than 
 half of the Median Household Income in Philadelphia. Extremely Uncomfortable means
 that the household living that County, with the salary of the Philadelphia Median 
 Household Income, would be in poverty.
 
-```{r col_map_region, echo=FALSE, message=FALSE, warning=FALSE}
+```{r col_map_region, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
 
 ggplot() +
   geom_sf(data = water, fill = "steelblue") +
   geom_sf(data = ec_lrs_22, aes(fill = f_phl_mhi), color = "transparent") +
-  scale_fill_brewer(palette = "RdYlGn", na.value = "gray", direction = -1) +
-  xlim(-80, -65) +
-  ylim(38, 45) +
   geom_sf(data = us, fill = "transparent", color = "steelblue", size = 8) +
   labs(title = "2022 Remote Work Bargains for Renters",
        subtitle = "Northeastern Region",
        fill = "Percentage of Philadelphia MHI",
        caption = "Source: 2022 ACS, U.S. Census Bureau") +
+  xlim(-2250000, 2074000) +
+  ylim(350000, 3400000) +
   theme_void() +
   theme(legend.position = "right")
 ```
@@ -258,7 +376,7 @@ In the Northeastern region, the only area where a household would not be comfort
 is in the DC/Northern Virginia area. Throughout most of Pennsylvania, a household
 would be more than comfortable given the cost of living and price of rents per County.
 
-```{r col_map_pa, echo=FALSE, message= FALSE, warning=FALSE}
+```{r col_map_pa, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
 ggplot() +
   geom_sf(data = water, fill = "steelblue") +
   geom_sf(data = ec_lrs_22, aes(fill = f_phl_mhi), color = "transparent") +
@@ -278,3 +396,79 @@ ggplot() +
 Inspiration for this article comes from [@mobilitymatters] and [@bestworst]
 
 ### References
+
+# Bike Rack
+In 2022, the Median Household Income in the Metropolitan Statistical Area of 
+Philadelphia, PA was $85,555. Compared to the MHI of other MSAs in the United 
+States,
+
+```{r msa_mhi_data, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+
+# phl_mhi_22 <- msa_mhi_22 %>%
+#   filter(GEOID == 37980)
+
+county_mhi_22 <- get_acs(geography = "county",
+                     year = 2022, 
+                     variables = c(pop = "B01003_001", mhi = "B19013_001", wfh = "B99087_005"),#median household income
+                     geometry = TRUE,
+                     output = "wide"
+) 
+
+county_mhi_22 <- county_mhi_22 %>%
+  mutate(pcentwfh = wfhE/popE)
+
+quantile(msa_mhi_22_cnt$MHI)
+
+```
+
+
+```{r msa_mhi_chart, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+
+ggplot() +
+  geom_point(data = msa_mhi_22, aes(x = mhiE, y = pcentwfh), color = "darkolivegreen") +
+  scale_x_continuous(labels = scales::label_dollar()) +
+  scale_y_continuous(labels = scales::label_percent()) +
+  geom_vline(data = msa_mhi_22_cnt, aes(xintercept = quantile(msa_mhi_22_cnt$MHI)), color = "goldenrod",
+             size = 0.5) +
+  # geom_text(data = msa_mhi_22_cnt, aes(x = mhiE + 3000, y = 100, label = "Philadelphia MSA"),
+  #           color = "goldenrod", angle = 90) +
+  labs(title = "2022 Population vs Median Household Income",
+       subtitle = "US Metropolitan Statistical Areas",
+       x = "Median Household Income",
+       y = " ",
+#       fill = "Percentage of Philadelphia MHI",
+       caption = "Source: 2022 ACS, U.S. Census Bureau") +
+  theme_minimal()
+
+```
+
+The Philadelphia MSA's MHI is in the 93rd percentile of all MSAs. Theoretically,
+securing a remote work job that was based in Philadelphia allows for a large 
+amount of mobility. Across the country, a household earning that annual 
+income could likely rent in most Counties that orbit an MSA with a lower Cost of 
+Living without risk of being cost-burdened. 
+
+```{r eval=FALSE, include=FALSE}
+
+  case_when(pc_phl_mhi >= 2.0 ~ "Twice As Comfortable",
+                               pc_phl_mhi < 2.0 & pc_phl_mhi >= 1.5 ~ "Nearly Twice as Comfortable",
+                               pc_phl_mhi < 1.5 & pc_phl_mhi > 1.0 ~ "More than Comfortable",
+                               pc_phl_mhi == 1.0 ~ "Equally As Comfortable",
+                               pc_phl_mhi < 1.0 & pc_phl_mhi >= 0.8 ~ "Uncomfortable",
+                               pc_phl_mhi < 0.8 & pc_phl_mhi >= 0.5 ~ "Moderately Uncomfortable",
+                               pc_phl_mhi < 0.5 & pc_phl_mhi >= 0.3 ~ "Very Uncomfortable",
+                               pc_phl_mhi < 0.3 ~ "Extremely Uncomfortable"
+
+            
+
+ec_lrs_22$f_phl_mhi <- factor(ec_lrs_22$f_phl_mhi, levels = c("Twice As Comfortable",
+                                                              "Nearly Twice as Comfortable",
+                                                              "More than Comfortable",
+                                                              "Equally As Comfortable",
+                                                              "Uncomfortable",
+                                                              "Moderately Uncomfortable",
+                                                              "Very Uncomfortable",
+                                                              "Extremely Uncomfortable"))
+
+```
+
